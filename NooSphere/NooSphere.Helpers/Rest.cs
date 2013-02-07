@@ -14,12 +14,23 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
+#if ANDROID
+using Microsoft.Http;
+#else
+using System.Net.Http;
+#endif
 using Newtonsoft.Json;
 
 namespace NooSphere.Helpers
 {
     public static class Rest
     {
+#if ANDROID
+        private static HttpClient _httpClient = new HttpClient();
+#else
+        private static HttpClient _httpClient = new HttpClient();
+#endif
         /// <summary>
         /// Sends an Http request
         /// </summary>
@@ -28,11 +39,12 @@ namespace NooSphere.Helpers
         /// <param name="content">The content that needs to be added to the http request</param>
         /// <param name="connectionId">The id of the connection</param>
         /// <returns></returns>
-        public static string SendRequest(string url, HttpMethod method, object content = null, string connectionId = null)
+        private static Task<string> SendRequest(string url, HttpMethod method, object content = null, string connectionId = null)
         {
             var request = (HttpWebRequest)WebRequest.Create(url);
             request.Method = method.ToString().ToUpper();
             request.ContentLength = 0;
+            request.Proxy = null;
 
             if (connectionId != null)
                 request.Headers.Add(HttpRequestHeader.Authorization, connectionId);
@@ -46,7 +58,6 @@ namespace NooSphere.Helpers
                     var bytes = Encoding.UTF8.GetBytes(json);
 
                     request.ContentLength = bytes.Length;
-
                     using (var requestStream = request.GetRequestStream())
                     {
                         // Send the file as body request. 
@@ -54,87 +65,86 @@ namespace NooSphere.Helpers
                         requestStream.Close();
                     }
                 }
-                using (var response = (HttpWebResponse) request.GetResponse())
-                {
-                    if (response.StatusCode == HttpStatusCode.InternalServerError |
-                        response.StatusCode == HttpStatusCode.BadRequest)
-                        throw (new Exception(response.ToString()));
+                Log.Out("REST", String.Format("{0} request send to {1}",request.Method,request.RequestUri.ToString()));
+                var task = Task.Factory.FromAsync(
+                        request.BeginGetResponse,
+                        asyncResult => request.EndGetResponse(asyncResult), null);
 
-                    using (var streamReader = new StreamReader(response.GetResponseStream()))
-                        return streamReader.ReadToEnd();
-                }
+
+                return task.ContinueWith(t => ReadStreamFromResponse(t.Result));
             }
-            catch(WebException ex)
+            catch (WebException wex)
             {
-                throw ex;
-            }
-        }
-
-        public static byte[] DownloadFromHttpStream(string url, int fileLength, string connectionId=null)
-        {
-            var request = (HttpWebRequest)WebRequest.Create(url);
-            request.Method = HttpMethod.Get.ToString();
-            if (connectionId != null)
-                request.Headers.Add(HttpRequestHeader.Authorization, connectionId);
-
-            var bytesToRead = new byte[fileLength];
-            var bytesRead = 0;
-            var offset = 0;
-            try
-            {
-                using (var requestStream = request.GetResponse().GetResponseStream())
-                {
-                    while(requestStream != null && (fileLength>0 && (bytesRead=requestStream.Read(bytesToRead,offset,fileLength))>0))
-                    {
-                        fileLength -= bytesRead;
-                        offset += bytesRead;
-                    }
-                }
-
-                return bytesToRead;
-            }
-            catch (Exception)
-            {
+                Log.Out("REST",String.Format("Web Exception {0} caused by {1} call",wex,request.RequestUri));
                 return null;
             }
         }
 
-        /// <summary>
-        /// Sends a stream request over http
-        /// </summary>
-        /// <param name="url">The url</param>
-        /// <param name="filePath"></param>
-        /// <param name="connectionId"> </param>
-        public static void SendStreamingRequest(string url, string filePath, string connectionId = null)
+        public static Task<Stream> DownloadStream(string path, string connectionId)
         {
-            if (File.Exists(filePath))
-                try
-                {
-                    var request = (HttpWebRequest)WebRequest.Create(url);
-                    request.Method = "POST";
-                    request.ContentType = "text/plain";
-                    if(connectionId !=null)
-                        request.Headers.Add(HttpRequestHeader.Authorization,connectionId);
+#if ANDROID
+            if (connectionId != null)
+                _httpClient.DefaultHeaders.Authorization = Microsoft.Http.Headers.Credential.Parse(connectionId);
+            _httpClient.BaseAddress = new Uri(path);
+            return Task<Stream>.Factory.StartNew(() =>
+                                      {
+                                          Stream stream = null;
+                                            _httpClient.GetAsync(delegate(HttpResponseMessage message)
+                                            {
+                                                stream = message.Content.ReadAsStream();
+                                            });
+                                          return stream;
+                                      });
+#else
+            try
+            {
+                if (connectionId != null)
+                    _httpClient.DefaultRequestHeaders.Authorization = System.Net.Http.Headers.AuthenticationHeaderValue.Parse(connectionId);
 
-                    var fileToSend = File.ReadAllBytes(filePath);
-                    request.ContentLength = fileToSend.Length;
+                return _httpClient.GetAsync(path).ContinueWith(resp => resp.Result.Content.ReadAsStreamAsync().ContinueWith(s => s.Result).Result);
+            }
+            catch(Exception ex)
+            {
+                Log.Out("REST", string.Format("{0} while downloading from stream",ex), LogCode.Err);
+                throw ex;
+            }
+#endif
+        }
+        public static Task<bool> UploadStream(string path, string localPath, string connectionId)
+        {
+#if ANDROID
+            if (connectionId != null)
+                _httpClient.DefaultHeaders.Authorization = Microsoft.Http.Headers.Credential.Parse(connectionId);
+            _httpClient.BaseAddress = new Uri(path);
+            return Task<bool>.Factory.StartNew(() =>
+                                      {
+                                          using(var fs = new FileStream(localPath, FileMode.Open))
+                                          {
+                                              var ok = false;
+                                              _httpClient.PostAsync(path, HttpContent.Create(fs), delegate(HttpResponseMessage message)
+                                                    {
+                                                        ok = message.StatusCode == HttpStatusCode.OK;
+                                                    });
+                                              return ok;
+                                          }
+                                      });
+#else
+            if (connectionId != null)
+                _httpClient.DefaultRequestHeaders.Authorization = System.Net.Http.Headers.AuthenticationHeaderValue.Parse(connectionId);
 
-                    using (var requestStream = request.GetRequestStream())
-                    {
-                        // Send the file as body request. 
-                        requestStream.Write(fileToSend, 0, fileToSend.Length);
-                        requestStream.Close();
-                    }
+            return _httpClient.PostAsync(path, new ByteArrayContent(File.ReadAllBytes(localPath))).ContinueWith(r => r.IsCompleted);
+#endif
+        }
 
-                    using (var response = (HttpWebResponse)request.GetResponse())
-                        Console.WriteLine("HTTP/{0} {1} {2}", response.ProtocolVersion, (int)response.StatusCode, response.StatusDescription);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.ToString());
-                }
-            else
-                throw new FileNotFoundException("File at path: "+ filePath + " does not exist.");
+        private static string ReadStreamFromResponse(WebResponse response)
+        {
+            Log.Out("REST", String.Format("Recieved response from {0}",response.ResponseUri));
+            using (var responseStream = response.GetResponseStream())
+            using (var sr = new StreamReader(responseStream))
+            {
+                var strContent = sr.ReadToEnd();
+                return strContent;
+            }
         }
 
         /// <summary>
@@ -142,9 +152,9 @@ namespace NooSphere.Helpers
         /// </summary>
         /// <param name="uri">Uri to the webservice</param>
         /// <returns>JSON formatted response string from the server</returns>
-        public static string Get(string uri)
+        public static string Get(string uri, object obj = null, string connectionId = null)
         {
-            return SendRequest(uri, HttpMethod.Get);
+            return SendRequest(uri, HttpMethod.Get,obj,connectionId).Result;
         }
         /// <summary>
         /// Get JSON response string through a HTTP POST request
@@ -152,9 +162,9 @@ namespace NooSphere.Helpers
         /// <param name="uri">Uri to the webservice</param>
         /// <param name="obj">object to serialize</param>
         /// <returns>JSON formatted response string from the server</returns>
-        public static string Post(string uri, object obj = null)
+        public static string Post(string uri, object obj = null, string connectionId = null)
         {
-            return SendRequest(uri, HttpMethod.Post, obj);
+            return SendRequest(uri, HttpMethod.Post, obj, connectionId).Result;
         }
         /// <summary>
         /// Get JSON response string through a HTTP PUT request
@@ -162,9 +172,9 @@ namespace NooSphere.Helpers
         /// <param name="uri">Uri to the webservice</param>
         /// <param name="obj">object to serialize</param>
         /// <returns>JSON formatted response string from the server</returns>
-        public static string Put(string uri, object obj = null)
+        public static string Put(string uri, object obj = null, string connectionId = null)
         {
-            return SendRequest(uri, HttpMethod.Put, obj);
+            return SendRequest(uri, HttpMethod.Put, obj, connectionId).Result;
         }
         /// <summary>
         /// Get JSON response string through a HTTP DELETE request
@@ -172,9 +182,9 @@ namespace NooSphere.Helpers
         /// <param name="uri">Uri to the webservice</param>
         /// <param name="obj">object to serialize</param>
         /// <returns>JSON formatted response string from the server</returns>
-        public static string Delete(string uri, object obj = null)
+        public static string Delete(string uri, object obj = null, string connectionId = null)
         {
-            return SendRequest(uri, HttpMethod.Delete, obj);
+            return SendRequest(uri, HttpMethod.Delete, obj, connectionId).Result;
         }
     }
 

@@ -33,22 +33,26 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Microsoft.AspNet.SignalR.Client">
+      <HintPath>..\packages\Microsoft.AspNet.SignalR.Client.1.0.0-rc2\lib\net40\Microsoft.AspNet.SignalR.Client.dll</HintPath>
+    </Reference>
     <Reference Include="Mono.Zeroconf, Version=4.0.0.90, Culture=neutral, PublicKeyToken=e60c4f4a95e1099e, processorArchitecture=MSIL">
       <HintPath>..\packages\Mono.Zeroconf.0.9.0.0\lib\Net20\Mono.Zeroconf.dll</HintPath>
     </Reference>
     <Reference Include="Mono.Zeroconf.Providers.Bonjour, Version=4.0.0.90, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Mono.Zeroconf.0.9.0.0\lib\Net20\Mono.Zeroconf.Providers.Bonjour.dll</HintPath>
     </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>..\packages\Newtonsoft.Json.4.5.7\lib\net40\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-    <Reference Include="SignalR.Client">
-      <HintPath>..\packages\SignalR.Client.0.5.2\lib\net40\SignalR.Client.dll</HintPath>
+    <Reference Include="Newtonsoft.Json, Version=4.5.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\Newtonsoft.Json.4.5.11\lib\net40\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
-    <Reference Include="System.Net.Http, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL" />
+    <Reference Include="System.Net.Http">
+      <HintPath>..\packages\Microsoft.Net.Http.2.0.20710.0\lib\net40\System.Net.Http.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.ServiceModel" />
     <Reference Include="System.ServiceModel.Discovery" />
@@ -62,17 +66,28 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Base\Client\ActivityClient.cs" />
-    <Compile Include="Base\Client\Configuration.cs" />
+    <Compile Include="Base\Controller\ActivityController.cs" />
+    <Compile Include="Base\Controller\Configuration.cs" />
+    <Compile Include="Base\Controller\IActivityProxy.cs" />
     <Compile Include="Base\ContextEventArgs.cs" />
     <Compile Include="Base\Client\NetEventHandler.cs" />
     <Compile Include="Base\Client\StartupMode.cs" />
+    <Compile Include="Base\Message.cs" />
     <Compile Include="Base\Service\ActivityCloudConnector.cs" />
     <Compile Include="Base\Service\ActivityManager.cs" />
     <Compile Include="Base\Service\ActivityStore.cs" />
     <Compile Include="Base\Service\ParticipantStore.cs" />
     <Compile Include="Base\Service\Syncer.cs" />
-    <Compile Include="Contracts\INetEvent.cs" />
-    <Compile Include="Discovery\DiscoveryType.cs" />
+    <Compile Include="Context\ContextMonitor.cs" />
+    <Compile Include="Context\DataEventArgs.cs" />
+    <Compile Include="Context\IContextService.cs" />
+    <Compile Include="Context\Multicast\MulticastSocket.cs" />
+    <Compile Include="Context\Multicast\MulticastSocketListener.cs" />
+    <Compile Include="Context\Multicast\StateObject.cs" />
+    <Compile Include="Context\Multicast\UdpPerformanceTest.cs" />
+    <Compile Include="Base\Client\INetEventHandler.cs" />
+    <Compile Include="Discovery\IDiscovery.cs" />
+    <Compile Include="Base\IServiceBase.cs" />
     <Compile Include="Base\ActivityEventArgs.cs" />
     <Compile Include="Base\Service\CloudEvents.cs" />
     <Compile Include="Base\ComEventArgs.cs" />
@@ -82,28 +97,33 @@
     <Compile Include="Base\FileEventArgs.cs" />
     <Compile Include="Base\ParticipantsEventArgs.cs" />
     <Compile Include="Base\FriendEventArgs.cs" />
+    <Compile Include="Discovery\BroadcastService.cs" />
+    <Compile Include="Discovery\DiscoveryAddressAddedEventArgs.cs" />
+    <Compile Include="Discovery\DiscoveryEventArgs.cs" />
+    <Compile Include="Discovery\DiscoveryManager.cs" />
+    <Compile Include="Discovery\DiscoveryType.cs" />
+    <Compile Include="Discovery\ServiceInfo.cs" />
     <Compile Include="FileServer\FileRequest.cs" />
     <Compile Include="FileServer\FileSource.cs" />
     <Compile Include="FileServer\FileStore.cs" />
     <Compile Include="Base\IActivityNode.cs" />
-    <Compile Include="Contracts\IFileServer.cs" />
-    <Compile Include="Contracts\IUserEvent.cs" />
+    <Compile Include="Base\Service\IFileServer.cs" />
+    <Compile Include="Base\Client\IUserNetEvent.cs" />
     <Compile Include="FileServer\IFileStore.cs" />
+    <Compile Include="Helpers\Log.cs" />
+    <Compile Include="Helpers\Mime.cs" />
+    <Compile Include="Helpers\Net.cs" />
+    <Compile Include="Helpers\Rest.cs" />
+    <Compile Include="Helpers\XML.cs" />
     <Compile Include="PubSub\Concurrency.cs" />
     <Compile Include="Base\Service\ConnectedClient.cs" />
-    <Compile Include="Contracts\IActivityManager.cs" />
-    <Compile Include="Contracts\IMessenger.cs" />
-    <Compile Include="Discovery\IDiscovery.cs" />
-    <Compile Include="Contracts\EventType.cs" />
-    <Compile Include="Contracts\IActivityNetEvent.cs" />
-    <Compile Include="Contracts\IComNetEvent.cs" />
-    <Compile Include="Contracts\IDeviceNetEvent.cs" />
-    <Compile Include="Contracts\IFileNetEvent.cs" />
-    <Compile Include="Discovery\DiscoveryAddressAddedEventArgs.cs" />
-    <Compile Include="Discovery\DiscoveryEventArgs.cs" />
-    <Compile Include="Discovery\DiscoveryManager.cs" />
-    <Compile Include="Discovery\BroadcastService.cs" />
-    <Compile Include="Discovery\ServiceInfo.cs" />
+    <Compile Include="Base\Service\IActivityManager.cs" />
+    <Compile Include="Base\Service\IMessenger.cs" />
+    <Compile Include="Base\EventType.cs" />
+    <Compile Include="Base\Client\IActivityNetEvent.cs" />
+    <Compile Include="Base\Client\IComNetEvent.cs" />
+    <Compile Include="Base\Client\IDeviceNetEvent.cs" />
+    <Compile Include="Base\Client\IFileNetEvent.cs" />
     <Compile Include="PubSub\Registry.cs" />
     <Compile Include="PubSub\RestPublisher.cs" />
     <Compile Include="PubSub\RestSubscriber.cs" />
@@ -117,10 +137,6 @@
     <ProjectReference Include="..\NooSphere.Core\NooSphere.Core.csproj">
       <Project>{03C072A4-5960-4A5D-B0CC-98EBD854E970}</Project>
       <Name>NooSphere.Core</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\NooSphere.Helpers\NooSphere.Helpers.csproj">
-      <Project>{6424191D-5C04-43E6-B610-FD4B41E8A340}</Project>
-      <Name>NooSphere.Helpers</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

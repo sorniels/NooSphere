@@ -11,7 +11,7 @@
 ****************************************************************************/
 
 using System;
-using NooSphere.ActivitySystem.Contracts;
+using NooSphere.ActivitySystem.Base.Client;
 
 namespace NooSphere.ActivitySystem.Base
 {
