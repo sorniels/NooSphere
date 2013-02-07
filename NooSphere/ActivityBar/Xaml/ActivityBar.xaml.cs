@@ -1,4 +1,4 @@
-﻿/****************************************************************************
+/****************************************************************************
  (c) 2012 Steven Houben(shou@itu.dk) and Søren Nielsen(snielsen@itu.dk)
 
  Pervasive Interaction Technology Laboratory (pIT lab)
@@ -14,32 +14,29 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Collections.ObjectModel;
 using System.Windows.Threading;
-using System.Threading;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using ActivityUI.Context;
+using ActivityUI.Xaml.Login;
 using NooSphere.ActivitySystem.Base;
 using NooSphere.ActivitySystem.Base.Client;
 using NooSphere.ActivitySystem.Base.Service;
-using NooSphere.ActivitySystem.Contracts;
 using NooSphere.ActivitySystem.Discovery;
 using NooSphere.ActivitySystem.Host;
 using NooSphere.Core.ActivityModel;
 using NooSphere.Core.Devices;
-using NooSphere.Helpers;
 using NooSphere.Platform.Windows.Glass;
+using NooSphere.Platform.Windows.Hooks;
 using NooSphere.Platform.Windows.VDM;
 using ActivityUI.Properties;
-using ActivityUI.Login;
 using ActivityUI.PopUp;
-using NooSphere.Platform.Windows.Hooks;
-using NooSphere.Context.IO;
-using NooSphere.Context.Multicast;
 
 namespace ActivityUI.Xaml
 {
@@ -74,10 +71,11 @@ namespace ActivityUI.Xaml
         public RenderStyle RenderStyle { get; set; }
         public bool ClickDetected = false;
 
+        private string _startupDesktopPath;
+
         //Debug
         //private PointerNode _pointer = new PointerNode(PointerRole.Controller);
 
-        private UdpPerformanceTest test = new UdpPerformanceTest();
 
         #endregion
 
@@ -87,6 +85,7 @@ namespace ActivityUI.Xaml
         /// </summary>
         public ActivityBar()
         {
+            _startupDesktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
             InitializeComponent();
             _activityWindow = new ActivityWindow(this);
             _popUpWindows.Add(_activityWindow);
@@ -97,14 +96,15 @@ namespace ActivityUI.Xaml
             _deviceWindow = new DeviceWindow(this);
             _popUpWindows.Add(_deviceWindow);
 
+            //MouseHook.Register();
+            //MouseHook.MouseDown += MouseHookMouseClick;
+            //MouseHook.MouseMove += MouseHookMouseMove;
 
             DisableUi();
 
             _login = new LoginWindow();
             _login.LoggedIn += LoginLoggedIn;
             _login.Show();
-
-            test.Test(1000);
         }
         #endregion
 
@@ -118,7 +118,7 @@ namespace ActivityUI.Xaml
         /// Sends a message to the activity manager
         /// </summary>
         /// <param name="message">Message that needs to be send to the activity manager</param>
-        public void SendMessage(string message)
+        public void SendMessage(Message message)
         {
             _client.SendMessage(message);
             txtInput.Text = "";
@@ -136,13 +136,13 @@ namespace ActivityUI.Xaml
         {
             _serviceList.Clear();
 
-            var t = new Thread(() =>
-            {
-                _disc = new DiscoveryManager();
-                _disc.DiscoveryAddressAdded += DiscDiscoveryAddressAdded;
-                _disc.Find(Settings.Default.DISCOVERY_TYPE);
-            }) {IsBackground = true};
-            t.Start();
+         Task.Factory.StartNew(
+                delegate 
+                {
+                        _disc = new DiscoveryManager();
+                        _disc.DiscoveryAddressAdded += DiscDiscoveryAddressAdded;
+                        _disc.Find(Settings.Default.DISCOVERY_TYPE);
+                    });
         }
         #endregion
 
@@ -205,15 +205,15 @@ namespace ActivityUI.Xaml
         /// </summary>
         public void StartActivityManager()
         {
-            var t = new Thread(() =>
-            {
-                _host = new GenericHost();
-                _host.HostLaunched += HostHostLaunched;
-                _host.Open(new ActivityManager(_owner, "c:/files/"), typeof(IActivityManager), _device.Name);
-                _host.StartBroadcast(Settings.Default.DISCOVERY_TYPE,_device.Name, _device.Location);
+            Task.Factory.StartNew(
+                   delegate
+                   {
+                       _host = new GenericHost(7891);
+                        _host.HostLaunched += HostHostLaunched;
+                        _host.Open(new ActivityManager(_owner, "c:/files/"), typeof (IActivityManager), _device.Name);
+                        _host.StartBroadcast(Settings.Default.DISCOVERY_TYPE, _device.Name, _device.TagValue.ToString(), _device.Location);
 
-            }) {IsBackground = true};
-            t.Start();
+                    });
         }
 
         /// <summary>
@@ -235,19 +235,34 @@ namespace ActivityUI.Xaml
             _client.ActivityAdded += ClientActivityAdded;
             _client.ActivityChanged += ClientActivityChanged;
             _client.ActivityRemoved += ClientActivityRemoved;
+            _client.ActivitySwitched += ClientActivitySwitched;
+
             _client.MessageReceived += ClientMessageReceived;
 
             _client.FriendAdded += client_FriendAdded;
             _client.FriendDeleted += client_FriendDeleted;
             _client.FriendRequestReceived += ClientFriendRequestReceived;
 
-            _client.FileUploadRequest += ClientFileUploadRequest;
-            _client.FileDownloadRequest += ClientFileDownloadRequest;
-            _client.FileDeleteRequest += ClientFileDeleteRequest;
+            _client.ConnectionEstablished += ClientConnectionEstablished;
+            _client.ServiceIsDown += ClientServiceIsDown;
+            _client.ContextMonitor.AddContextService(new InputRedirect(PointerRole.Controller));
             _client.ContextMessageReceived += _client_ContextMessageReceived;
 
-            _client.ConnectionEstablished += ClientConnectionEstablished;
             _client.Open(activityManagerHttpAddress);
+        }
+
+        void ClientActivitySwitched(object sender, ActivityEventArgs e)
+        {
+            VirtualDesktopManager.CurrentDesktop = _proxies[e.Activity.Id].Desktop;
+
+            var activityFolder = _client.LocalPath+ e.Activity.Id;
+            if (Directory.Exists(activityFolder))
+                DesktopFolderSwitcher.ChangeDesktopFolder(activityFolder);
+        }
+
+        void ClientServiceIsDown(object sender, EventArgs e)
+        {
+            Environment.Exit(0);
         }
 
         void _client_ContextMessageReceived(object sender, ContextEventArgs e)
@@ -260,20 +275,9 @@ namespace ActivityUI.Xaml
 
         void ClientConnectionEstablished(object sender, EventArgs e)
         {
+            _client.ContextMonitor.Start();
             BuildUi();
             _startingUp = false;
-        }
-        void ClientFileDeleteRequest(object sender, FileEventArgs e)
-        {
-            Log.Out("Interface",string.Format("Received {0} for {1}",FileEvent.FileDeleteRequest,e.Resource.Name),LogCode.Net);
-        }
-        void ClientFileDownloadRequest(object sender, FileEventArgs e)
-        {
-            Log.Out("Interface", string.Format("Received {0} for {1}", FileEvent.FileDownloadRequest, e.Resource.Name), LogCode.Net);
-        }
-        void ClientFileUploadRequest(object sender, FileEventArgs e)
-        {
-            Log.Out("Interface", string.Format("Received {0} for {1}", FileEvent.FileUploadRequest, e.Resource.Name), LogCode.Net);
         }
 
         /// <summary>
@@ -348,11 +352,6 @@ namespace ActivityUI.Xaml
 
                 _proxies.Add(p.Activity.Id, p);
             }));
-        }
-
-        void BDrop(object sender, DragEventArgs e)
-        {
-            MessageBox.Show(e.Data.ToString());
         }
 
         /// <summary>
@@ -444,7 +443,7 @@ namespace ActivityUI.Xaml
         public void EditActivity(Activity ac)
         {
             _currentButton.Text = ac.Name;
-            //client.UpdateActivity(ac);
+            _client.UpdateActivity(ac);
         }
 
         /// <summary>
@@ -524,18 +523,20 @@ namespace ActivityUI.Xaml
         /// </summary>
         public void ExitApplication()
         {
+
+            DesktopFolderSwitcher.ChangeDesktopFolder(_startupDesktopPath);
             //Hide all popUps
             HideAllPopups();
 
-            if(_startMode == StartUpMode.Client)
+            if (_startMode == StartUpMode.Client)
                 _client.Close();
+
+            //Close the host if running
+            if(_host != null &&_host.IsRunning)
+                _host.Close();
 
             //Close the taskbar
             Close();
-
-            //Close the host if running
-            if(_host.IsRunning)
-                _host.Close();
 
             //Uninitialize the virtual desktop manager
             VirtualDesktopManager.UninitDesktops();
@@ -564,7 +565,7 @@ namespace ActivityUI.Xaml
             if(!HitTestAllPopWindow(e.Location))
                 HideAllPopups();
         }
-        void MouseHook_MouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
+        private void MouseHookMouseMove(object sender, System.Windows.Forms.MouseEventArgs e)
         {
             if (!HitTestAllPopWindow(e.Location))
                 HideAllPopups();
@@ -611,7 +612,7 @@ namespace ActivityUI.Xaml
         }
         private void BtnSendClick(object sender, RoutedEventArgs e)
         {
-            SendMessage(txtInput.Text);
+
         }
         private void LoginLoggedIn(object sender, EventArgs e)
         {
@@ -649,8 +650,11 @@ namespace ActivityUI.Xaml
             AddActivityUi(e.Activity);
             Console.WriteLine("Activity Added\n");
 
-            //   _client.AddResource(new FileInfo("c:/dump/abc.jpg"),e.Activity.Id );
+            //_client.AddResource(new FileInfo("c:/dump/abc" + count.ToString() + ".jpg"), e.Activity.Id);
+            //count++;
         }
+
+        private int count = 1;
         private void BtnAddClick(object sender, RoutedEventArgs e)
         {
             AddEmptyActivity();
@@ -661,7 +665,8 @@ namespace ActivityUI.Xaml
         }
         private void BClick(object sender, RoutedEventArgs e)
         {
-            SwitchToVirtualDesktop(_proxies[((ActivityButton)sender).ActivityId].Desktop);
+            _client.SwitchActivity(_proxies[((ActivityButton) sender).ActivityId].Activity);
+            //SwitchToVirtualDesktop(_proxies[((ActivityButton)sender).ActivityId].Desktop);
         }
         private void BtnStartClick(object sender, RoutedEventArgs e)
         {
@@ -695,11 +700,11 @@ namespace ActivityUI.Xaml
         {
             var ac = new Activity
             {
-                Name = "test activity - " + DateTime.Now,
+                Name = "nameless",
                 Description = "This is the description of the test activity - " + DateTime.Now
             };
             ac.Uri = "http://tempori.org/" + ac.Id;
-
+            ac.Participants.Add(new User() { Email = " 	snielsen@itu.dk" });
             ac.Meta.Data = "added meta data";
             ac.Owner = _owner;
             return ac;
@@ -804,21 +809,21 @@ namespace ActivityUI.Xaml
         }
         #endregion
 
-        private void Window_DragEnter(object sender, DragEventArgs e)
+        private void BDragEnter(object sender, DragEventArgs e)
         {
             if (e.Data.GetDataPresent(DataFormats.FileDrop))
-            {
                 e.Effects = DragDropEffects.Copy;
-            }
-
-
         }
 
-        private void Window_Drop(object sender, DragEventArgs e)
+        private void BDrop(object sender, DragEventArgs e)
         {
-            MessageBox.Show( e.Data.ToString());
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            var droppedFilePaths =
+                e.Data.GetData(DataFormats.FileDrop, true) as string[];
+            if (droppedFilePaths == null) return;
+            var fInfo = new FileInfo(droppedFilePaths[0]);
+            _client.AddResource(fInfo, ((ActivityButton)sender).ActivityId);
         }
-
     }
     public enum RenderStyle
     {

@@ -52,7 +52,8 @@
       <HintPath>..\packages\Mono.Zeroconf.0.9.0.0\lib\Net20\Mono.Zeroconf.Providers.Bonjour.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=4.5.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\packages\Newtonsoft.Json.4.5.7\lib\net40\Newtonsoft.Json.dll</HintPath>
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\Newtonsoft.Json.4.5.11\lib\net40\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="PresentationFramework.Aero" />
     <Reference Include="System" />
@@ -84,6 +85,8 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="Activity\Proxy.cs" />
+    <Compile Include="Context\InputRedirect.cs" />
+    <Compile Include="PDFConverter.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="Xaml\ActivityButton.cs" />
     <Compile Include="Xaml\IconToAvgColorBrushConverter.cs" />
@@ -169,6 +172,7 @@
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
     <None Include="app.config" />
     <None Include="packages.config" />
@@ -183,21 +187,17 @@
       <Project>{5CD6DD93-3EA1-425F-89D7-A80FD23BBC71}</Project>
       <Name>NooSphere.ActivitySystem</Name>
     </ProjectReference>
-    <ProjectReference Include="..\NooSphere.Context\NooSphere.Context.csproj">
-      <Project>{579056D5-469B-4BAA-8F2B-E522A3E76C8E}</Project>
-      <Name>NooSphere.Context</Name>
-    </ProjectReference>
     <ProjectReference Include="..\NooSphere.Core\NooSphere.Core.csproj">
       <Project>{03C072A4-5960-4A5D-B0CC-98EBD854E970}</Project>
       <Name>NooSphere.Core</Name>
     </ProjectReference>
-    <ProjectReference Include="..\NooSphere.Helpers\NooSphere.Helpers.csproj">
-      <Project>{6424191D-5C04-43E6-B610-FD4B41E8A340}</Project>
-      <Name>NooSphere.Helpers</Name>
-    </ProjectReference>
     <ProjectReference Include="..\NooSphere.Platform.Windows\NooSphere.Platform.Windows.csproj">
-      <Project>{B3333919-EE66-441A-8AB3-6E6601A8A0B1}</Project>
+      <Project>{b3333919-ee66-441a-8ab3-6e6601a8a0b1}</Project>
       <Name>NooSphere.Platform.Windows</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Virtual-Desktop-Manager-API-master\Whathecode.VirtualDesktopManagerAPI.csproj">
+      <Project>{6ca7ab2c-2d8d-422a-9fd4-2992be62720a}</Project>
+      <Name>Whathecode.VirtualDesktopManagerAPI</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

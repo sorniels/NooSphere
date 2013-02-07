@@ -12,12 +12,10 @@
 
 using System;
 using System.Windows;
-using Microsoft.Surface;
 using Microsoft.Surface.Presentation.Controls;
 using System.Windows.Media;
 using Microsoft.Surface.Presentation.Controls.TouchVisualizations;
 using ActivityDesk.Windowing;
-using ActivityDesk.Visualizer;
 
 using System.Threading;
 using ActivityDesk.Visualizer.Definitions;
@@ -25,16 +23,22 @@ using System.Windows.Threading;
 using System.Collections.Generic;
 using NooSphere.ActivitySystem.Base;
 using NooSphere.ActivitySystem.Base.Service;
+using NooSphere.ActivitySystem.Helpers;
 using NooSphere.Core.ActivityModel;
 using NooSphere.ActivitySystem.Host;
-using NooSphere.ActivitySystem.Contracts;
 using NooSphere.ActivitySystem.Discovery;
 using NooSphere.Core.Devices;
 using System.Windows.Media.Imaging;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using NooSphere.ActivitySystem.Base.Client;
-using NooSphere.ActivitySystem.Base.Client;
+using System.Windows.Controls;
+using ActivityDesk.Visualizer.Visualization;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using Behaviors;
+using System.Windows.Ink;
+using Microsoft.Surface.Presentation.Input;
 
 namespace ActivityDesk
 {
@@ -45,16 +49,20 @@ namespace ActivityDesk
     {
         #region Members
 
-        private ActivityClient _client;
+        private ActivityClient _pairedManager;
+        private string _pairedTag;
+
         private GenericHost _host;
         private DiscoveryManager _disc;
+
         private readonly User _user;
         private readonly Device _device;
+
         private DeskState _deskState;
-
-        private Thread _discoveryThread;
-
-        private Dictionary<Guid, SurfaceButton> _proxies = new Dictionary<Guid,SurfaceButton>();
+        private Activity _currentActivity;
+        private readonly List<string> _lockedTags = new List<string>();
+        private readonly List<string> _connectedDeviceTags = new List<string>();
+        private DocumentContainer _documentContainer = new DocumentContainer();
 
         #endregion
 
@@ -68,14 +76,13 @@ namespace ActivityDesk
             //Initializes design-time components
             InitializeComponent();
 
-            //Disable default touch visualizations
-            TouchVisualizer.SetShowsVisualizations(this, false);
+            TouchVisualizer.SetShowsVisualizations(_documentContainer, false);
 
-            // Add handlers for window availability events.
-            AddWindowAvailabilityHandlers();
-
+            Visualizer.VisualizationInitialized += new TagVisualizerEventHandler(Visualizer_VisualizationInitialized);
             //Initializes tag definitions
             InitializeTags();
+
+            this.documentViewContainer.Children.Add(_documentContainer);
 
             SetDeskState(DeskState.Ready);
 
@@ -86,8 +93,8 @@ namespace ActivityDesk
                 DeviceType = DeviceType.Tabletop,
                 Name = "Surface"
             };
-        }
 
+        }
         public BitmapSource ToBitmapSource(System.Drawing.Bitmap source)
         {
             BitmapSource bitSrc = null;
@@ -126,21 +133,7 @@ namespace ActivityDesk
 
             this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
             {
-                switch (deskState)
-                {
-                    case ActivityDesk.DeskState.Active:
-                        this.Background = (ImageBrush)this.Resources["green"];
-                        break;
-                    case ActivityDesk.DeskState.Locked:
-                        this.Background = (ImageBrush)this.Resources["red"];
-                        break;
-                    case ActivityDesk.DeskState.Occupied:
-                        this.Background = (ImageBrush)this.Resources["yellow"];
-                        break;
-                    case ActivityDesk.DeskState.Ready:
-                        this.Background = (ImageBrush)this.Resources["blue"];
-                        break;
-                }
+                this.Background = (ImageBrush)this.Resources["back"];
             }));
         }
         #endregion
@@ -152,306 +145,291 @@ namespace ActivityDesk
         private void InitializeUI()
         {
             SetDeskState(ActivityDesk.DeskState.Occupied);
+
         }
 
-        private void AddResourceWindow()
-        {
-            this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
-            {
-                view.Items.Add(new TableWindow());
-            }));
-        }
-        private void AddActivityUI(Activity activity)
-        {
-            this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
-            {
-                SurfaceButton b = new SurfaceButton();
-                b.HorizontalContentAlignment = System.Windows.HorizontalAlignment.Center;
-                b.VerticalContentAlignment = System.Windows.VerticalAlignment.Center;
-                b.Background = System.Windows.Media.Brushes.Gray;
-                b.Click += new RoutedEventHandler(b_Click);
-                b.Width = 300;
-                b.Height = Double.NaN;
-                b.Content = activity.Name;
-                view.Items.Add(b);
-            }));
-        }
-
-        void b_Click(object sender, RoutedEventArgs e)
-        {
-            
-        }
         /// <summary>
         /// Initializes the tag defintions
         /// </summary>
         private void InitializeTags()
         {
-            TagVisualizationDefinition definition = new SmartPhoneDefinition();
-            definition.Source = new Uri("Visualizer/Visualizations/SmartPhone.xaml", UriKind.Relative);
-            definition.TagRemovedBehavior = TagRemovedBehavior.Disappear;
-            definition.LostTagTimeout = 1000;
 
-            TagVisualizationDefinition definition2 = new TabletDefinition();
-            definition2.Source = new Uri("Visualizer/Visualizations/VisualizationTablet.xaml", UriKind.Relative);
-            definition2.LostTagTimeout = 1000;
-
-            Visualizer.Definitions.Add(definition);
-            Visualizer.Definitions.Add(definition2);
+            Visualizer.Definitions.Add(
+                new SmartPhoneDefinition()
+                {
+                    Source = new Uri("Visualizer/Visualizations/SmartPhone.xaml", UriKind.Relative),
+                    TagRemovedBehavior = TagRemovedBehavior.Disappear,
+                    LostTagTimeout = 1000
+                });
+            Visualizer.Definitions.Add( 
+                new TabletDefinition()
+                {
+                    Source = new Uri("Visualizer/Visualizations/VisualizationTablet.xaml", UriKind.Relative),
+                    LostTagTimeout = 1000
+                }
+                );
         }
         #endregion
 
+        #region NooSphere
+
+        private void StartHost()
+        {
+            var t = new Thread(() =>
+            {
+                _host = new GenericHost(7891);
+                _host.HostLaunched += new HostLaunchedHandler(host_HostLaunched);
+                _host.Open(new ActivityManager(new User(), "c:/files/"), typeof(IActivityManager), "desk");
+
+            });
+            t.Start();
+        }
+        private void StartClient(string addr,string tag)
+        {
+            if (_pairedManager == null)
+            {
+                try
+                {
+                    _pairedTag = tag;
+                    _pairedManager = new ActivityClient(@"c:/abcdesk/", _device) { CurrentUser = new User() };
+                    _pairedManager.ActivityAdded += ClientActivityAdded;
+                    _pairedManager.ActivityRemoved += ClientActivityRemoved;
+                    _pairedManager.FileAdded += new FileAddedHandler(_client_FileAdded);
+                    _pairedManager.ServiceIsDown += new ServiceDownHandler(_client_ServiceIsDown);
+                    _pairedManager.ActivitySwitched += new ActivitySwitchedHandler(_client_ActivitySwitched);
+                    _pairedManager.DeviceAdded += new DeviceAddedHandler(_pairedManager_DeviceAdded);
+                    _pairedManager.Open(addr);
+                    InitializeUI();
+                }
+                catch (Exception ex)
+                {
+
+                    MessageBox.Show(ex.ToString());
+                }
+            }
+            else if (tag != _pairedTag)
+            {
+                StartRoleChangeProcedure(addr);
+                return;
+            }
+
+        }
+
+        void _pairedManager_DeviceAdded(object sender, DeviceEventArgs e)
+        {
+
+        }
+
+        private void StartRoleChangeProcedure(string addr)
+        {
+            try
+            {
+                var actCli = new ActivityClient(@"c:/abcdesk/", _device) { CurrentUser = new User() };
+                actCli.ConnectionEstablished += ActCliConnectionEstablished;
+                actCli.Open(addr);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
+        }
+
+        private void ActCliConnectionEstablished(object sender, EventArgs e)
+        {
+            var msg= new Message
+                         {Type = MessageType.Connect, Content = _pairedManager.ServiceAddress, From = "Mediator"};
+            ((ActivityClient)sender).SendMessage(msg);
+        }
         private void RunDiscovery()
         {
-            _discoveryThread = new Thread(() =>
+            Task.Factory.StartNew(() =>
             {
                 _disc = new DiscoveryManager();
                 _disc.DiscoveryAddressAdded += DiscDiscoveryAddressAdded;
                 _disc.DiscoveryFinished += DiscDiscoveryFinished;
                 _disc.Find(DiscoveryType.WSDiscovery);
-            }) {IsBackground = true};
-            _discoveryThread.Start();
+            });
         }
-
-        void DiscDiscoveryFinished(object o, DiscoveryEventArgs e)
+        private void DiscDiscoveryFinished(object o, DiscoveryEventArgs e)
         {
             if (_disc.ActivityServices.Count == 0)
-                if(Visualizer.ActiveVisualizations.Count ==0)
+                if (Visualizer.ActiveVisualizations.Count == 0)
                     SetDeskState(DeskState.Ready);
                 else
                     SetDeskState(DeskState.Locked);
         }
-
-        void DiscDiscoveryAddressAdded(object o, DiscoveryAddressAddedEventArgs e)
+        private void DiscDiscoveryAddressAdded(object o, DiscoveryAddressAddedEventArgs e)
         {
-            StartClient(e.ServiceInfo.Address);
-        }
+            var q = new List<TagVisualization>(Visualizer.ActiveVisualizations);
 
-
-        #region NooSphere
-
-        /// <summary>
-        /// 1--- Start the Activitymanager
-        /// </summary>
-        void StartHost()
-        {
-            var t = new Thread(() =>
+            this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
             {
-                _host = new GenericHost();
-                _host.HostLaunched += new HostLaunchedHandler(host_HostLaunched);
-                _host.Open(new ActivityManager(new User(),"c:/files/"), typeof(IActivityManager),"desk");
-
-            });
-            t.Start();
+                foreach (var tv in q)
+                {
+                    if (e.ServiceInfo.Code == Convert.ToString(tv.VisualizedTag.Value))
+                    {
+                        StartClient(e.ServiceInfo.Address, e.ServiceInfo.Code);
+                    }
+                    return;
+                }
+            }));
         }
-
-        /// <summary>
-        /// 2--- if host is launched, start the client
-        /// </summary>
-        void host_HostLaunched(object sender, EventArgs e)
+        private void host_HostLaunched(object sender, EventArgs e)
         {
-            StartClient(_host.Address);
+           
         }
-
-        /// <summary>
-        /// 3--- Start theclient
-        /// </summary>
-        void StartClient(string addr)
-        {   
-            _client = new ActivityClient(@"c:/abcdesk/", _device) { CurrentUser = new User() };
-
-            _client.ActivityAdded += ClientActivityAdded;
-            _client.ActivityRemoved += ClientActivityRemoved;
-
-            _client.Open(addr);
-            InitializeUI();
-        }
-
-        void ClientActivityAdded(object sender, ActivityEventArgs e)
+        private void _client_ActivitySwitched(object sender, ActivityEventArgs e)
         {
-            AddActivityUI(e.Activity);
+            _currentActivity = e.Activity;
+            if (e.Activity.Resources.Count != 0)
+                foreach (Resource res in e.Activity.Resources)
+                    VisualizeResouce(res, _pairedManager.LocalPath + res.RelativePath);
         }
-
-        void client_DeviceAdded(object sender, DeviceEventArgs e)
+        private void _client_ServiceIsDown(object sender, EventArgs e)
         {
-            MessageBox.Show(e.Device.Id.ToString());
+            SetDeskState(ActivityDesk.DeskState.Locked);
+
+            if (_pairedManager != null)
+            {
+                _pairedManager.Close();
+                _pairedManager = null;
+            }
+            this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
+            {
+
+            }));
         }
-
-        void client_MessageReceived(object sender, ComEventArgs e)
+        private void _client_FileAdded(object sender, FileEventArgs e)
         {
-            MessageBox.Show(e.Message);
+            if(_currentActivity != null)
+                if(e.Resource.ActivityId == _currentActivity.Id)
+                    VisualizeResouce(e.Resource,e.LocalPath);
         }
-
-        void ClientActivityRemoved(object sender, ActivityRemovedEventArgs e)
+        private void ClientActivityAdded(object sender, ActivityEventArgs e)
         {
-            RemoveActivityUI(e.Id);
+            //AddActivityUI(e.Activity);
         }
-
-        private void RemoveActivityUI(Guid guid)
+        private void client_DeviceAdded(object sender, DeviceEventArgs e)
         {
+           
+        }
+        private void client_MessageReceived(object sender, ComEventArgs e)
+        {
+            MessageBox.Show(e.Message.Content);
 
+        }
+        private void ClientActivityRemoved(object sender, ActivityRemovedEventArgs e)
+        {
+            //RemoveActivityUI(e.Id);
         }
         #endregion
 
-        #region UI Events
-        /// <summary>
-        /// Here when a ScatterViewItem moves.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void OnScatterDelta(object sender, ContainerManipulationDeltaEventArgs e)
+        #region UI
+        private void VisualizeResouce(Resource res, string path)
         {
-            // The ScatterViewItem moved, so synchronize visualizations appropriately.
-            // Note that doing so is unnecessary when TagVisualizerEvents.Mode is set
-            // to Auto.
-            //TagVisualizerEvents.Synchronize();
 
-            // It's not necessary to check "is auto-update active?" and only call
-            // Synchronize() if it isn't, because the Synchronize() method is smart
-            // enough not to do redundant checking when auto-synchronize is on.
-        }
-        #endregion
+            try
+            {
+                var i = new Image();
+                var src = new BitmapImage();
+                src.BeginInit();
+                src.UriSource = new Uri(path, UriKind.Relative);
+                src.CacheOption = BitmapCacheOption.OnLoad;
+                src.EndInit();
+                i.Source = src;
+                i.Stretch = Stretch.Uniform;
 
-        #region Visualizations
-        /// <summary>
-        /// Here when a visualization enters another object.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void OnVisualizationEnter(object sender, TagVisualizationEnterLeaveEventArgs e)
-        {
-            //((BaseVisualization)e.Visualization).Enter();
-        }
-
-        /// <summary>
-        /// Here when a visualization leaves another object.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void OnVisualizationLeave(object sender, TagVisualizationEnterLeaveEventArgs e)
-        {
-            //((BaseVisualization)e.Visualization).Leave();
+                _documentContainer.AddResource(i,res.Name);
+            }
+            catch { }
         }
 
         #endregion
 
-        #region Surface Window Handlers
-        /// <summary>
-        /// Occurs when the window is about to close.
-        /// </summary>
-        /// <param name="e"></param>
-        protected override void OnClosed(EventArgs e)
+        #region Events
+
+        void Visualizer_VisualizationInitialized(object sender, TagVisualizerEventArgs e)
         {
-            base.OnClosed(e);
-
-            // Remove handlers for window availability events.
-            RemoveWindowAvailabilityHandlers();
-        }
-        /// <summary>
-        /// Adds handlers for window availability events.
-        /// </summary>
-        private void AddWindowAvailabilityHandlers()
-        {
-            // Subscribe to surface window availability events.
-            ApplicationServices.WindowInteractive += OnWindowInteractive;
-            ApplicationServices.WindowNoninteractive += OnWindowNoninteractive;
-            ApplicationServices.WindowUnavailable += OnWindowUnavailable;
-        }
-
-        /// <summary>
-        /// Removes handlers for window availability events.
-        /// </summary>
-        private void RemoveWindowAvailabilityHandlers()
-        {
-            // Unsubscribe from surface window availability events.
-            ApplicationServices.WindowInteractive -= OnWindowInteractive;
-            ApplicationServices.WindowNoninteractive -= OnWindowNoninteractive;
-            ApplicationServices.WindowUnavailable -= OnWindowUnavailable;
-        }
-
-        /// <summary>
-        /// This is called when the user can interact with the application's window.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void OnWindowInteractive(object sender, EventArgs e)
-        {
-            //TODO: enable audio, animations here
-        }
-
-        /// <summary>
-        /// This is called when the user can see but not interact with the application's window.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void OnWindowNoninteractive(object sender, EventArgs e)
-        {
-            //TODO: Disable audio here if it is enabled
-
-            //TODO: optionally enable animations here
-        }
-
-        /// <summary>
-        /// This is called when the application's window is not visible or interactive.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void OnWindowUnavailable(object sender, EventArgs e)
-        {
-            //TODO: disable audio, animations here
-        }
-        #endregion
-
-        private void SurfaceWindow_Loaded(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void SurfaceButton_Click(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        private void btnAddActivity_Click(object sender, RoutedEventArgs e)
-        {
-            
         }
 
         private void Visualizer_VisualizationAdded(object sender, TagVisualizerEventArgs e)
         {
-            if (Visualizer.ActiveVisualizations.Count == 1)
+            if (lblStart.Visibility == System.Windows.Visibility.Visible)
+                lblStart.Visibility = System.Windows.Visibility.Hidden;
+
+            if (!_lockedTags.Contains(e.TagVisualization.VisualizedTag.Value.ToString()))
             {
-                RunDiscovery();
-                SetDeskState(ActivityDesk.DeskState.Active);
+                if (Visualizer.ActiveVisualizations.Count > 0 && _pairedManager == null)
+                {
+                    SetDeskState(ActivityDesk.DeskState.Active);
+                }
+            }
+            else
+            {
+                _documentContainer.RemoveDevice(e.TagVisualization.VisualizedTag.Value.ToString());
+            }
+            ((BaseVisualization)e.TagVisualization).Locked += new LockedEventHandler(Desk_Locked);
+            RunDiscovery();
+        }
+        private void Desk_Locked(object sender, LockedEventArgs e)
+        {
+            if (_lockedTags.Contains(e.VisualizedTag))
+            {
+                _lockedTags.Remove(e.VisualizedTag);
+                _documentContainer.RemoveDevice(e.VisualizedTag);
+                Log.Out("ActivityDesk", String.Format("{0} unlocked", e.VisualizedTag));
+            }
+            else
+            {
+                _lockedTags.Add(e.VisualizedTag);
+                Log.Out("ActivityDesk", String.Format("{0} locked", e.VisualizedTag));
             }
         }
 
         private void Visualizer_VisualizationRemoved(object sender, TagVisualizerEventArgs e)
         {
-            if (Visualizer.ActiveVisualizations.Count == 0)
+            if (!_lockedTags.Contains(e.TagVisualization.VisualizedTag.Value.ToString()))
             {
-                SetDeskState(ActivityDesk.DeskState.Ready);
-            }
-            if (_client != null)
-            {
-                _client.Close();
-                _client = null;
-            }
+                Thread.Sleep(3000);
+                if (Visualizer.ActiveVisualizations.Count == 0)
+                {
+                    SetDeskState(ActivityDesk.DeskState.Ready);
+                    lblStart.Visibility = System.Windows.Visibility.Visible;
+                }
+                if (_pairedManager != null)
+                {
+                    _pairedManager.Close();
+                    _pairedManager = null;
+                }
 
 
-            this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
-            {
-                view.Items.Clear();
-            }));
+                this.Dispatcher.Invoke(DispatcherPriority.Background, new System.Action(() =>
+                {
+                    //documentContainer.Clear();
+                }));
+            }
+            else
+                _documentContainer.AddDevice(new Device(){TagValue=e.TagVisualization.VisualizedTag.Value},e.TagVisualization.Center);
+
         }
-
         private void Visualizer_VisualizationMoved(object sender, TagVisualizerEventArgs e)
         {
 
         }
-
-        private void Visualizer_Loaded(object sender, RoutedEventArgs e)
+        #endregion
+        private void button1_PreviewTouchDown(object sender, TouchEventArgs e)
         {
-            //InitializeTracker();
+            Console.WriteLine(e.TouchDevice.GetIsFingerRecognized().ToString());
+            if (e.TouchDevice.GetIsFingerRecognized())
+            {
+                _documentContainer.AddNote();
+            }
         }
+
+        private void SurfaceWindow_PreviewTouchDown(object sender, TouchEventArgs e)
+        {
+        }
+
+
     }
 }

@@ -12,6 +12,10 @@
     <OutputType>winexe</OutputType>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <RunPostBuildEvent>OnBuildSuccess</RunPostBuildEvent>
+    <SccProjectName>Svn</SccProjectName>
+    <SccLocalPath>Svn</SccLocalPath>
+    <SccAuxPath>Svn</SccAuxPath>
+    <SccProvider>SubversionScc</SccProvider>
     <PublishUrl>Publish\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Web</InstallFrom>
@@ -26,10 +30,8 @@
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
-    <SccProjectName>Svn</SccProjectName>
-    <SccLocalPath>Svn</SccLocalPath>
-    <SccAuxPath>Svn</SccAuxPath>
-    <SccProvider>SubversionScc</SccProvider>
+    <Utf8Output>true</Utf8Output>
+    <ExpressionBlendVersion>4.0.20525.0</ExpressionBlendVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -76,8 +78,25 @@
       <DependentUpon>App.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <None Include="app.config">
+      <SubType>Designer</SubType>
+    </None>
+    <Compile Include="CustomTopmostBehavior.cs" />
     <Compile Include="DeskState.cs" />
+    <Compile Include="DeviceTumbnail.xaml.cs">
+      <DependentUpon>DeviceTumbnail.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="DocumentContainer.xaml.cs">
+      <DependentUpon>DocumentContainer.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="DocumentViewTemplateSelector.cs" />
     <Compile Include="Helper\Pdf\PDFConverter.cs" />
+    <Compile Include="Note.xaml.cs">
+      <DependentUpon>Note.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ResourceViewer.xaml.cs">
+      <DependentUpon>ResourceViewer.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Visualizer\Definitions\SmartPhoneDefinition.cs" />
     <Compile Include="Visualizer\Definitions\TabletDefinition.cs" />
     <Compile Include="Visualizer\Visualizations\SmartPhone.xaml.cs">
@@ -108,6 +127,26 @@
     <AppDesigner Include="Properties\" />
   </ItemGroup>
   <ItemGroup>
+    <Page Include="ColoredButtons.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="DeviceTumbnail.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="DocumentContainer.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Note.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="ResourceViewer.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Visualizer\Visualizations\SmartPhone.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -134,7 +173,10 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
+    <Resource Include="icon_tablet.png" />
     <Resource Include="Images\document.PNG" />
+    <Resource Include="preview_COLOURBOX4153138.jpg" />
+    <Resource Include="Visualizer\Visualizations\pin1.jpg" />
   </ItemGroup>
   <ItemGroup>
     <WCFMetadata Include="Service References\" />
@@ -170,10 +212,6 @@
       <Project>{03C072A4-5960-4A5D-B0CC-98EBD854E970}</Project>
       <Name>NooSphere.Core</Name>
     </ProjectReference>
-    <ProjectReference Include="..\NooSphere.Helpers\NooSphere.Helpers.csproj">
-      <Project>{6424191D-5C04-43E6-B610-FD4B41E8A340}</Project>
-      <Name>NooSphere.Helpers</Name>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Images\blue.jpg" />
@@ -182,6 +220,15 @@
     <Resource Include="Images\green.jpg" />
     <Resource Include="Images\red.jpg" />
     <Resource Include="Images\yellow.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Images\back.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Images\1ms-193199.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Images\note.png" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
 </Project>

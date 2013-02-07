@@ -12,11 +12,11 @@
 
 using System;
 using System.ServiceModel;
-using System.ServiceModel.Channels;
 using System.ServiceModel.Description;
 using System.Threading;
+using NooSphere.ActivitySystem.Base;
 using NooSphere.ActivitySystem.Discovery;
-using NooSphere.Helpers;
+using NooSphere.ActivitySystem.Helpers;
 
 namespace NooSphere.ActivitySystem.Host
 {
@@ -63,6 +63,11 @@ namespace NooSphere.ActivitySystem.Host
         /// </summary>
         public bool IsRunning { get; private set; }
 
+        /// <summary>
+        /// The service that is running
+        /// </summary>
+        public IServiceBase Service { get; set; }
+
         #endregion
 
         #region Constructor-Destructor
@@ -70,10 +75,12 @@ namespace NooSphere.ActivitySystem.Host
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericHost()
+        public GenericHost(int port = -1)
         {
+            if (port == -1)
+                port = Net.FindPort();
             Ip = Net.GetIp(IPType.All);
-            Port = Net.FindPort();
+            Port = port;
 
             Address = "http://" + Ip + ":" + Port + "/";
         }
@@ -112,12 +119,12 @@ namespace NooSphere.ActivitySystem.Host
         /// <param name="type">Type of discovery </param>
         /// <param name="hostName">The name of the service that needs to be broadcasted</param>
         /// <param name="location">The physical location of the service that needs to be broadcasted</param>
-        public void StartBroadcast(DiscoveryType type,string hostName, string location = "undefined")
+        public void StartBroadcast(DiscoveryType type,string hostName,string code, string location = "undefined")
         {
             var t = new Thread(() =>
                                    {
                                        StopBroadcast();
-                                       _broadcast.Start(type, hostName, location,
+                                       _broadcast.Start(type, hostName, location,code,
                                                         Net.GetUrl(Ip, Port, ""));
                                    }) {IsBackground = true};
             t.Start();
@@ -139,8 +146,10 @@ namespace NooSphere.ActivitySystem.Host
         /// <param name="implementation">The concrete initialized single instance service</param>
         /// <param name="description">The interface or contract of initialized single instance service</param>
         /// <param name="name">The name the service</param>
-        public void Open(object implementation, Type description, string name)
+        public void Open(IServiceBase implementation, Type description, string name)
         {
+            Service = implementation;
+
             Log.Out("BasicHost", string.Format(" Attemting to find an IP for endPoint"), LogCode.Net);
             Ip = Net.GetIp(IPType.All);
 
@@ -174,6 +183,7 @@ namespace NooSphere.ActivitySystem.Host
             {
                 try
                 {
+                    Service.ServiceDown();
                     OnHostClosedEvent(new EventArgs());
                     _host.Close();
                 }

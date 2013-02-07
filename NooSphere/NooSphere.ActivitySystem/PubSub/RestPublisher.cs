@@ -12,9 +12,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.Threading;
-using NooSphere.ActivitySystem.Contracts;
-using NooSphere.Helpers;
+using System.Linq;
+using System.Threading.Tasks;
+using NooSphere.ActivitySystem.Helpers;
+using NooSphere.ActivitySystem.Base.Service;
 
 namespace NooSphere.ActivitySystem.PubSub
 {
@@ -29,36 +30,31 @@ namespace NooSphere.ActivitySystem.PubSub
         /// <param name="sendToSource">Enables or disable self-publishing to source</param>
         public void Publish(string publishUrl, object netObject, object source = null, bool sendToSource = false)
         {
-            Log.Out("Publisher", string.Format("Published {0}",publishUrl), LogCode.Net);
+            //Log.Out("Publisher", string.Format("Published {0}",publishUrl), LogCode.Net);
             var toRemove = new List<string>();
-            var t = new Thread(() =>
+
+            var devices = Registry.ConnectedClients;
+            for (var i = 0; i < devices.Count;i++ )
             {
-                lock (Concurrency.SubscriberLock)
+                var addr = devices.Values.ToList()[i].Device.BaseAddress;
+                try
                 {
-                    foreach (var entry in Registry.ConnectedClients)
-                    {
-                        try
+                    Task.Factory.StartNew(
+                        delegate
                         {
-                            if (source != null && entry.Value == source && sendToSource)
-                                Rest.Post(entry.Value.Device.BaseAddress + publishUrl, netObject);
-                            else Rest.Post(entry.Value.Device.BaseAddress + publishUrl, netObject);
-                        }
-                        catch (Exception)
-                        {
-                            
-                            toRemove.Add(entry.Key);
-                        }
-
-                    }
-                    if (toRemove.Count > 0)
-                    {
-                        foreach (var id in toRemove)
-                            Registry.ConnectedClients.Remove(id);
-                    }
+                                Rest.Post(addr + publishUrl, netObject);
+                                Log.Out("Publisher",
+                                        string.Format("Published {0} to {1}", publishUrl, addr),
+                                        LogCode.Net);
+                            });
+                }   
+                catch (Exception)
+                {
+                    toRemove.Add(devices.Keys.ToList()[i]);
                 }
-
-            });
-            t.Start();
+            }
+            foreach (var addr in toRemove)
+                Registry.ConnectedClients.Remove(addr);
         }
 
         /// <summary>
@@ -69,16 +65,12 @@ namespace NooSphere.ActivitySystem.PubSub
         /// <param name="subscriber"> </param>
         public void PublishToSubscriber(string publishUrl, object netObject,object subscriber)
         {
-            Log.Out("Publisher", string.Format("Publishing {0} to {1}", publishUrl,subscriber), LogCode.Net);
-            var t = new Thread(() =>
-            {
-                lock (Concurrency.SubscriberLock)
+            Task.Factory.StartNew(
+                delegate
                 {
-                    Rest.Post(subscriber + publishUrl, netObject);
-                }
-
-            });
-            t.Start();
+                        Rest.Post(subscriber + publishUrl, netObject);
+                        Log.Out("Publisher", string.Format("Publishing {0} to {1}", publishUrl, subscriber), LogCode.Net);
+                });
         }
     }
 }

@@ -11,31 +11,32 @@
 ****************************************************************************/
 
 using System;
-using System.IO;
-using System.Net;
+using NooSphere.Core.ActivityModel;
+using System.ServiceModel;
+using NooSphere.Core.Devices;
+
 #if ANDROID
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-#endif
-using NooSphere.ActivitySystem.Contracts;
-using NooSphere.Core.ActivityModel;
-#if !ANDROID
-using System.ServiceModel;
-#endif
-using NooSphere.Core.Devices;
 using NooSphere.Helpers;
 
-namespace NooSphere.ActivitySystem.Base
+#endif
+#if !ANDROID
+#endif
+
+namespace NooSphere.ActivitySystem.Base.Client
 {
     #if !ANDROID
-    [ServiceBehavior(ConcurrencyMode = ConcurrencyMode.Single, InstanceContextMode = InstanceContextMode.Single, UseSynchronizationContext = false)]
-    #endif
-    public class NetEventHandler : INetEvent
+    [ServiceBehavior(ConcurrencyMode = ConcurrencyMode.Single, InstanceContextMode = InstanceContextMode.Single,
+        UseSynchronizationContext = false)]
+#endif
+    public class NetEventHandler : INetEventHandler
     {
-        #if ANDROID
+#if ANDROID
         #region Private Members
         private readonly HttpListener _httpListener;
+        private static readonly AutoResetEvent ListenForNextRequest = new AutoResetEvent(false);
         #endregion
 
         #region Protected Members
@@ -46,19 +47,47 @@ namespace NooSphere.ActivitySystem.Base
         public NetEventHandler()
         {
             BaseUrl = Net.GetUrl(Net.GetIp(IPType.All), Net.FindPort(), "").ToString();
+            ServicePointManager.DefaultConnectionLimit = 100;
             _httpListener = new HttpListener();
             _httpListener.Prefixes.Add(BaseUrl);
 
             _httpListener.Start();
-            _httpListener.AuthenticationSchemes = AuthenticationSchemes.Anonymous;
-            _httpListener.BeginGetContext(HandleRequest, _httpListener);
+            ThreadPool.QueueUserWorkItem(Listen);
         }
         #endregion
 
         #region HttpHandlers
+        private void Listen(object state)
+        {
+            while(_httpListener.IsListening)
+            {
+                _httpListener.BeginGetContext(HandleRequest, _httpListener);
+                ListenForNextRequest.WaitOne();
+            }
+        }
         private void HandleRequest(IAsyncResult result)
         {
-            var context = _httpListener.EndGetContext(result);
+            var listener = result.AsyncState as HttpListener;
+            HttpListenerContext context;
+
+            if (listener == null) return;
+
+            try
+            {
+                context = listener.EndGetContext(result);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.ToString());
+                return;
+            }
+            finally
+            {
+                ListenForNextRequest.Set();
+            }
+
+            if (context == null) return;
+
             var url = context.Request.RawUrl;
             var path = url.Split("/".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 
@@ -172,113 +201,134 @@ namespace NooSphere.ActivitySystem.Base
         private void Respond(HttpListenerContext context, int statusCode, string content)
         {
             context.Response.StatusCode = statusCode;
+            
             var buffer = Encoding.UTF8.GetBytes(content);
+            context.Response.ContentLength64 = buffer.Length;
             context.Response.OutputStream.Write(buffer, 0, buffer.Length);
             context.Response.OutputStream.Close();
             context.Response.Close();
-            _httpListener.BeginGetContext(HandleRequest, _httpListener);
         }
         #endregion
         #endif
 
         #region Events
-        public event ActivityAddedHandler ActivityAdded;
-        public event ActivityRemovedHandler ActivityRemoved;
-        public event ActivityChangedHandler ActivityChanged;
 
-        public event DeviceAddedHandler DeviceAdded;
-        public event DeviceRemovedHandler DeviceRemoved;
-        public event DeviceRoleChangedHandler DeviceRoleChanged;
+        public event ActivityAddedHandler ActivityAdded = delegate{};
+        public event ActivityRemovedHandler ActivityRemoved = delegate { };
+        public event ActivityChangedHandler ActivityChanged = delegate { };
+        public event ActivitySwitchedHandler ActivitySwitched = delegate { };
 
-        public event MessageReceivedHandler MessageReceived;
+        public event DeviceAddedHandler DeviceAdded = delegate { };
+        public event DeviceRemovedHandler DeviceRemoved = delegate { };
+        public event DeviceRoleChangedHandler DeviceRoleChanged = delegate { };
 
-        public event FileDownloadRequestHandler FileDownloadRequest;
-        public event FileUploadRequestHandler FileUploadRequest;
-        public event FileDeleteRequestHandler FileDeleteRequest;
+        public event MessageReceivedHandler MessageReceived = delegate { };
 
-        public event FriendAddedHandler FriendAdded;
-        public event FriendDeletedHandler FriendDeleted;
-        public event FriendRequestReceivedHandler FriendRequestReceived;
+        protected event FileDownloadRequestHandler FileDownloadRequest = delegate { };
+        protected event FileUploadRequestHandler FileUploadRequest = delegate { };
+        protected event FileDeleteRequestHandler FileDeleteRequest = delegate { };
 
-        public event ParticipantAddedHandler ParticipantAdded;
-        public event ParticipantRemovedHandler ParticipantRemoved;
+        public event FriendAddedHandler FriendAdded = delegate { };
+        public event FriendDeletedHandler FriendDeleted = delegate { };
+        public event FriendRequestReceivedHandler FriendRequestReceived = delegate { };
 
-        public event EventHandler UserOnline;
-        public event EventHandler UserOffline;
+        public event ParticipantAddedHandler ParticipantAdded = delegate { };
+        public event ParticipantRemovedHandler ParticipantRemoved = delegate { };
 
+        public event EventHandler UserOnline = delegate { };
+        public event EventHandler UserOffline = delegate { };
+
+        public event ServiceDownHandler ServiceIsDown = delegate { };
         #endregion
 
         #region Net Event handlers
+
+        public virtual void ActivityNetSwitched(Activity act)
+        {
+            if (ActivitySwitched != null)
+                ActivitySwitched(this, new ActivityEventArgs(act));
+        }
         protected virtual void OnUserOffline(EventArgs e)
         {
-            if (UserOffline != null) 
+            if (UserOffline != null)
                 UserOffline(this, e);
         }
 
         protected virtual void OnUserOnline(EventArgs e)
         {
-            if (UserOnline != null) 
+            if (UserOnline != null)
                 UserOnline(this, e);
         }
+
         public virtual void ActivityNetAdded(Activity act)
         {
             if (ActivityAdded != null)
                 ActivityAdded(this, new ActivityEventArgs(act));
         }
+
         public virtual void ActivityNetRemoved(Guid id)
         {
-             if (ActivityRemoved != null)
+            if (ActivityRemoved != null)
                 ActivityRemoved(this, new ActivityRemovedEventArgs(id));
         }
+
         public virtual void ActivityNetChanged(Activity act)
         {
-             if (ActivityChanged != null)
+            if (ActivityChanged != null)
                 ActivityChanged(this, new ActivityEventArgs(act));
         }
-        public virtual void MessageNetReceived(string msg)
+
+        public virtual void MessageNetReceived(Message msg)
         {
             if (MessageReceived != null)
                 MessageReceived(this, new ComEventArgs(msg));
         }
+
         public virtual void FileNetDownloadRequest(Resource r)
         {
             if (FileDownloadRequest != null)
                 FileDownloadRequest(this, new FileEventArgs(r));
         }
+
         public virtual void FileNetDeleteRequest(Resource r)
         {
             if (FileDeleteRequest != null)
                 FileDeleteRequest(this, new FileEventArgs(r));
         }
+
         public virtual void FileNetUploadRequest(Resource r)
         {
             if (FileUploadRequest != null)
                 FileUploadRequest(this, new FileEventArgs(r));
         }
+
         public virtual void DeviceNetAdded(Device dev)
         {
             if (DeviceAdded != null)
                 DeviceAdded(this, new DeviceEventArgs(dev));
         }
+
         public virtual void DeviceNetRemoved(string id)
         {
             if (DeviceRemoved != null)
                 DeviceRemoved(this, new DeviceRemovedEventArgs(id));
         }
+
         public virtual void DeviceNetRoleChanged(Core.Devices.Device dev)
         {
             if (DeviceRoleChanged != null)
                 DeviceRoleChanged(this, new DeviceEventArgs(dev));
         }
+
         public virtual void FriendNetAdded(User u)
         {
-            if(FriendAdded != null)
-                FriendAdded(this,new FriendEventArgs(u));
+            if (FriendAdded != null)
+                FriendAdded(this, new FriendEventArgs(u));
         }
 
         public virtual void FriendNetRequest(User u)
         {
-            if(FriendRequestReceived != null)
+            if (FriendRequestReceived != null)
                 FriendRequestReceived(this, new FriendEventArgs(u));
         }
 
@@ -290,14 +340,20 @@ namespace NooSphere.ActivitySystem.Base
 
         public virtual void ParticipantNetAdded(User u, Guid activityId)
         {
-            if(ParticipantAdded != null)
-                ParticipantAdded(this, new ParticipantEventArgs(u,activityId));
+            if (ParticipantAdded != null)
+                ParticipantAdded(this, new ParticipantEventArgs(u, activityId));
         }
 
         public virtual void ParticipantNetRemoved(User u, Guid activityId)
         {
             if (ParticipantRemoved != null)
                 ParticipantRemoved(this, new ParticipantEventArgs(u, activityId));
+        }
+
+        public virtual void ServiceDown()
+        {
+            if(ServiceIsDown!=null)
+                ServiceIsDown(this,new EventArgs());
         }
 
         public bool Alive()

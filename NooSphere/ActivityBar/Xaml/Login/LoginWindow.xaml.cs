@@ -1,41 +1,30 @@
-﻿/// <licence>
-/// 
-/// (c) 2012 Steven Houben(shou@itu.dk) and Søren Nielsen(snielsen@itu.dk)
-/// 
-/// Pervasive Interaction Technology Laboratory (pIT lab)
-/// IT University of Copenhagen
-///
-/// This library is free software; you can redistribute it and/or 
-/// modify it under the terms of the GNU GENERAL PUBLIC LICENSE V3 or later, 
-/// as published by the Free Software Foundation. Check 
-/// http://www.gnu.org/licenses/gpl.html for details.
-/// 
-/// </licence>
+﻿/****************************************************************************
+ (c) 2012 Steven Houben(shou@itu.dk) and Søren Nielsen(snielsen@itu.dk)
+
+ Pervasive Interaction Technology Laboratory (pIT lab)
+ IT University of Copenhagen
+
+ This library is free software; you can redistribute it and/or 
+ modify it under the terms of the GNU GENERAL PUBLIC LICENSE V3 or later, 
+ as published by the Free Software Foundation. Check 
+ http://www.gnu.org/licenses/gpl.html for details.
+****************************************************************************/
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
+using NooSphere.ActivitySystem.Helpers;
 using NooSphere.Core.Devices;
 using NooSphere.Core.ActivityModel;
 using ActivityUI.Properties;
-using NooSphere.Helpers;
 using Newtonsoft.Json;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Diagnostics;
-using ActivityUI.PopUp;
-using System.ComponentModel;
 
-namespace ActivityUI.Login
+namespace ActivityUI.Xaml.Login
 {
     public partial class LoginWindow : Window
     {
@@ -54,6 +43,10 @@ namespace ActivityUI.Login
         {
             SourceInitialized += new EventHandler(LoginWindow_SourceInitialized);
             InitializeComponent();
+
+            for (int i = 0; i < 256; i++)
+                cbTag.Items.Add(i);
+
             LoadSettings();
 
             ToolTipService.SetIsEnabled(btnInfo, false);
@@ -61,6 +54,9 @@ namespace ActivityUI.Login
             ToolTipService.SetIsEnabled(btnGo, false);
 
             this.cbType.ItemsSource = Enum.GetValues(typeof(DeviceType)).Cast<DeviceType>();
+
+
+
         }
         #endregion
 
@@ -71,6 +67,7 @@ namespace ActivityUI.Login
             txtEmail.Text = Settings.Default.USER_EMAIL;
             txtDevicename.Text = Settings.Default.DEVICE_NAME;
             cbType.SelectedValue = Settings.Default.DEVICE_TYPE;
+            cbTag.SelectedValue = Settings.Default.DEVICE_TAG;
         }
         private void SaveSettings()
         {
@@ -78,6 +75,7 @@ namespace ActivityUI.Login
             Settings.Default.USER_EMAIL = txtEmail.Text;
             Settings.Default.DEVICE_NAME = txtDevicename.Text;
             Settings.Default.DEVICE_TYPE = (DeviceType)cbType.SelectedValue;
+            Settings.Default.DEVICE_TAG = (int)cbTag.SelectedValue;
             Settings.Default.Save();
         }
         private void CreateUser(string baseUrl)
@@ -107,6 +105,7 @@ namespace ActivityUI.Login
             this.Device = new Device();
             this.Device.Name = txtDevicename.Text;
             this.Device.DeviceType = (DeviceType)cbType.SelectedValue;
+            Device.TagValue = (int)cbTag.SelectedValue;
 
             if (rbClient.IsChecked == true)
                 this.Mode = StartUpMode.Client;
